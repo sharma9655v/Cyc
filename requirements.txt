@@ -1,0 +1,10 @@
+streamlit
+numpy
+pandas
+joblib
+requests
+twilio
+folium
+streamlit-folium
+geopy
+gtts
