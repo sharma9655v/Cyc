@@ -77,61 +77,66 @@ with st.sidebar:
 
 tab_live, tab_sim, tab_ops = st.tabs(["📡 Live Data Monitor", "🧪 Storm Simulation", "🚨 Emergency Ops"])
 
-# --- LIVE MONITOR (With City Boundary) ---
+# --- LIVE MONITOR ---
 with tab_live:
     col1, col2 = st.columns([1, 2])
     with col1:
         st.metric("Live Pressure", f"{pres} hPa")
         st.metric("Region", loc_name)
         if pres < 1000:
-            st.error("🚨 ALERT: Low pressure system detected in Vizag boundary.")
+            st.error("🚨 ALERT: Cyclone risk detected in Vizag Boundary.")
 
     with col2:
+        # Base Satellite Map
         m = folium.Map(location=[lat, lon], zoom_start=11)
-        folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                         attr='Esri', name='Satellite').add_to(m)
+        folium.TileLayer(
+            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            attr='Esri', name='Satellite'
+        ).add_to(m)
         
-        # Approximate Visakhapatnam City Boundary Polygon
-        vizag_boundary = [
-            [17.75, 83.22], [17.78, 83.35], [17.70, 83.38], 
-            [17.65, 83.28], [17.62, 83.15], [17.70, 83.12]
+        # Detailed Boundary for Visakhapatnam
+        # This traces the city perimeter from Rishikonda down to Gajuwaka/Duvvada
+        vizag_detailed_boundary = [
+            [17.82, 83.35], [17.80, 83.39], [17.75, 83.35], [17.71, 83.32],
+            [17.68, 83.29], [17.65, 83.27], [17.63, 83.21], [17.65, 83.15],
+            [17.70, 83.12], [17.75, 83.15], [17.78, 83.22], [17.82, 83.35]
         ]
         
         folium.Polygon(
-            locations=vizag_boundary,
-            color="yellow",
-            weight=3,
+            locations=vizag_detailed_boundary,
+            color="#FFD700", # Gold border
+            weight=4,
             fill=True,
-            fill_color="orange",
+            fill_color="#FF4500", # Orange-Red fill
             fill_opacity=0.2,
-            popup="Visakhapatnam Metropolitan Area"
+            popup="Visakhapatnam Command Area"
         ).add_to(m)
         
         folium.Marker(
             [lat, lon], 
-            popup="Visakhapatnam Command Center",
-            icon=folium.Icon(color='red', icon='tower', prefix='fa')
+            popup="Visakhapatnam Central Command",
+            icon=folium.Icon(color='red', icon='warning', prefix='fa')
         ).add_to(m)
 
-        st_folium(m, height=450, use_container_width=True)
+        st_folium(m, height=500, use_container_width=True)
 
-# --- EMERGENCY OPS (TWILIO VOICE CALL SYSTEM) ---
+# --- EMERGENCY OPS ---
 with tab_ops:
     st.header("🚨 AI Voice Dispatch System")
-    recipient = st.text_input("Emergency Contact Number (+91...)", placeholder="+91XXXXXXXXXX")
+    recipient = st.text_input("Emergency Contact Number", placeholder="+91XXXXXXXXXX")
 
     if st.button("📞 Initiate AI Voice Call", type="primary"):
         if recipient:
-            with st.spinner("Connecting to Twilio..."):
+            with st.spinner("Connecting to Twilio and playing AI Voice..."):
                 success, result = make_ai_voice_call(recipient, VOICE_URLS[selected_voice], account_choice)
                 if success:
-                    st.success(f"✅ AI Voice Call Initiated! SID: {result}")
+                    st.success(f"✅ Call Initiated! SID: {result}")
                 else:
                     st.error(f"❌ Dispatch Failed: {result}")
         else:
-            st.warning("⚠️ Please provide a recipient phone number.")
+            st.warning("Please provide a phone number.")
 
 # --- SIMULATION ---
 with tab_sim:
     s_pres = st.slider("Simulate Low Pressure (hPa)", 880, 1030, 1010)
-    st.metric("Predicted Severity", "High" if s_pres < 995 else "Normal")s
+    st.metric("Predicted Severity", "High" if s_pres < 995 else "Normal")
