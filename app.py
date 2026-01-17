@@ -18,7 +18,6 @@ CONFIG = {
     "DEFAULT_COORDS": [17.6868, 83.2185] 
 }
 
-# Your provided Twilio Credentials
 TWILIO_ACCOUNTS = {
     "Primary": {
         "SID": "ACc9b9941c778de30e2ed7ba57f87cdfbc",
@@ -32,7 +31,6 @@ TWILIO_ACCOUNTS = {
     }
 }
 
-# Voice URLs specifically formatted for Twilio <Play> verb
 VOICE_URLS = {
     "📢 Regional Broadcast (English)": "https://drive.google.com/uc?export=download&id=1CWswvjAoIAO7h6C6Jh-uCsrOWFM7dnS_",
     "🇮🇳 Emergency Alert (Telugu)": "https://drive.google.com/uc?export=download&id=15xz_g_TvMAF2Icjesi3FyMV6MMS-RZHt"
@@ -48,21 +46,14 @@ def make_ai_voice_call(to_number, audio_url, account_key="Primary"):
     try:
         acc = TWILIO_ACCOUNTS[account_key]
         client = Client(acc["SID"], acc["AUTH"])
-        
-        # TwiML instructs Twilio to play your custom audio file
         twiml = f'<Response><Play>{audio_url}</Play></Response>'
-        
-        call = client.calls.create(
-            twiml=twiml, 
-            to=to_number, 
-            from_=acc["PHONE"]
-        )
+        call = client.calls.create(twiml=twiml, to=to_number, from_=acc["PHONE"])
         return True, call.sid
     except Exception as e:
         return False, str(e)
 
 # ==============================================================================
-# MODULE 3: DATA ENGINE (Weather & Model)
+# MODULE 3: DATA ENGINE
 # ==============================================================================
 def get_weather(city):
     try:
@@ -86,7 +77,7 @@ with st.sidebar:
 
 tab_live, tab_sim, tab_ops = st.tabs(["📡 Live Data Monitor", "🧪 Storm Simulation", "🚨 Emergency Ops"])
 
-# --- LIVE MONITOR ---
+# --- LIVE MONITOR (With Highlighted Area) ---
 with tab_live:
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -96,30 +87,44 @@ with tab_live:
             st.error("🚨 ALERT: Low pressure system detected.")
 
     with col2:
+        # 1. Base Map with Satellite view
         m = folium.Map(location=[lat, lon], zoom_start=11)
         folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                          attr='Esri', name='Satellite').add_to(m)
+        
+        # 2. Highlight Visakhapatnam Area
+        folium.Circle(
+            location=[lat, lon],
+            radius=15000, # 15km highlight area
+            color='crimson',
+            fill=True,
+            fill_color='red',
+            fill_opacity=0.3,
+            popup="Target Warning Zone: Visakhapatnam"
+        ).add_to(m)
+        
+        # 3. Specific Location Marker
+        folium.Marker(
+            [lat, lon], 
+            popup="Visakhapatnam Center",
+            icon=folium.Icon(color='red', icon='info-sign')
+        ).add_to(m)
+
         st_folium(m, height=450, use_container_width=True)
 
 # --- EMERGENCY OPS (TWILIO VOICE CALL SYSTEM) ---
 with tab_ops:
     st.header("🚨 AI Voice Dispatch System")
-    st.write("Enter a phone number to send an automated AI voice alert to the field.")
+    st.write("Initiate an automated AI voice alert call to the field.")
     
-    col_a, col_b = st.columns(2)
-    with col_a:
-        recipient = st.text_input("Emergency Contact Number (+91...)", placeholder="+91XXXXXXXXXX")
-    with col_b:
-        st.info(f"Current Voice Selection: {selected_voice}")
+    recipient = st.text_input("Emergency Contact Number (+91...)", placeholder="+91XXXXXXXXXX")
 
     if st.button("📞 Initiate AI Voice Call", type="primary"):
         if recipient:
-            with st.spinner("Connecting to Twilio and initiating AI voice..."):
+            with st.spinner("Connecting to Twilio..."):
                 success, result = make_ai_voice_call(recipient, VOICE_URLS[selected_voice], account_choice)
-                
                 if success:
                     st.success(f"✅ AI Voice Call Initiated! SID: {result}")
-                    st.toast("The recipient is now hearing the emergency alert.")
                 else:
                     st.error(f"❌ Dispatch Failed: {result}")
         else:
