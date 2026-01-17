@@ -18,6 +18,7 @@ CONFIG = {
     "DEFAULT_COORDS": [17.6868, 83.2185] 
 }
 
+# Your provided Twilio Credentials
 TWILIO_ACCOUNTS = {
     "Primary": {
         "SID": "ACc9b9941c778de30e2ed7ba57f87cdfbc",
@@ -31,44 +32,37 @@ TWILIO_ACCOUNTS = {
     }
 }
 
-# Mapping uploaded files for local playback and URLs for Twilio
-VOICE_MAP = {
-    "📢 Regional Broadcast (English)": {
-        "file": "alert_detailed.mp3",
-        "url": "https://drive.google.com/uc?export=download&id=1CWswvjAoIAO7h6C6Jh-uCsrOWFM7dnS_"
-    },
-    "🇮🇳 Emergency Alert (Telugu)": {
-        "file": "alert_telugu_final.mp3",
-        "url": "https://drive.google.com/uc?export=download&id=15xz_g_TvMAF2Icjesi3FyMV6MMS-RZHt"
-    }
+# Voice URLs specifically formatted for Twilio <Play> verb
+VOICE_URLS = {
+    "📢 Regional Broadcast (English)": "https://drive.google.com/uc?export=download&id=1CWswvjAoIAO7h6C6Jh-uCsrOWFM7dnS_",
+    "🇮🇳 Emergency Alert (Telugu)": "https://drive.google.com/uc?export=download&id=15xz_g_TvMAF2Icjesi3FyMV6MMS-RZHt"
 }
 
 st.set_page_config(page_title=CONFIG["APP_TITLE"], page_icon="🌪️", layout="wide")
 
 # ==============================================================================
-# MODULE 2: VOICE & DISPATCH ENGINE
+# MODULE 2: TWILIO CALL ENGINE
 # ==============================================================================
-def play_voice_local(file_path, autoplay=False):
-    """Plays the uploaded mp3 files in the dashboard browser."""
-    if os.path.exists(file_path):
-        with open(file_path, "rb") as f:
-            st.audio(f.read(), format="audio/mp3", autoplay=autoplay)
-    else:
-        st.error(f"❌ Audio file {file_path} not found in directory.")
-
-def trigger_twilio_call(to_number, audio_url, account_key="Primary"):
+def make_ai_voice_call(to_number, audio_url, account_key="Primary"):
     """Triggers the remote AI voice call via Twilio."""
     try:
         acc = TWILIO_ACCOUNTS[account_key]
         client = Client(acc["SID"], acc["AUTH"])
+        
+        # TwiML instructs Twilio to play your custom audio file
         twiml = f'<Response><Play>{audio_url}</Play></Response>'
-        call = client.calls.create(twiml=twiml, to=to_number, from_=acc["PHONE"])
+        
+        call = client.calls.create(
+            twiml=twiml, 
+            to=to_number, 
+            from_=acc["PHONE"]
+        )
         return True, call.sid
     except Exception as e:
         return False, str(e)
 
 # ==============================================================================
-# MODULE 3: DATA ENGINE
+# MODULE 3: DATA ENGINE (Weather & Model)
 # ==============================================================================
 def get_weather(city):
     try:
@@ -81,20 +75,14 @@ def get_weather(city):
 lat, lon, pres, loc_name = get_weather(CONFIG["TARGET_CITY"])
 
 # ==============================================================================
-# MODULE 4: UI TABS (AS BEFORE)
+# MODULE 4: UI TABS
 # ==============================================================================
 st.title(f"🌪️ {CONFIG['APP_TITLE']}")
 
 with st.sidebar:
-    st.header("🎙️ Voice Dispatch Center")
-    selected_voice_label = st.selectbox("Select Language Alert", list(VOICE_MAP.keys()))
-    
-    # Sidebar manual playback
-    if st.button("🔊 Preview Voice locally"):
-        play_voice_local(VOICE_MAP[selected_voice_label]["file"])
-    
-    st.divider()
-    account_choice = st.radio("Twilio Route", ["Primary", "Backup"])
+    st.header("⚙️ Call Settings")
+    selected_voice = st.selectbox("Select AI Voice Language", list(VOICE_URLS.keys()))
+    account_choice = st.radio("Twilio Account", ["Primary", "Backup"])
 
 tab_live, tab_sim, tab_ops = st.tabs(["📡 Live Data Monitor", "🧪 Storm Simulation", "🚨 Emergency Ops"])
 
@@ -103,11 +91,9 @@ with tab_live:
     col1, col2 = st.columns([1, 2])
     with col1:
         st.metric("Live Pressure", f"{pres} hPa")
-        st.metric("Current Region", loc_name)
-        # Condition-based autoplay
+        st.metric("Region", loc_name)
         if pres < 1000:
-            st.error("🚨 HIGH RISK DETECTED")
-            play_voice_local(VOICE_MAP["📢 Regional Broadcast (English)"]["file"], autoplay=True)
+            st.error("🚨 ALERT: Low pressure system detected.")
 
     with col2:
         m = folium.Map(location=[lat, lon], zoom_start=11)
@@ -115,30 +101,31 @@ with tab_live:
                          attr='Esri', name='Satellite').add_to(m)
         st_folium(m, height=450, use_container_width=True)
 
-# --- EMERGENCY OPS (COMBINED VOICE SYSTEM) ---
+# --- EMERGENCY OPS (TWILIO VOICE CALL SYSTEM) ---
 with tab_ops:
-    st.header("🚨 AI Voice Call Dispatch")
-    st.write("Triggering this will play the audio on your dashboard and call the recipient.")
+    st.header("🚨 AI Voice Dispatch System")
+    st.write("Enter a phone number to send an automated AI voice alert to the field.")
     
-    recipient = st.text_input("Recipient Phone Number (+91...)", placeholder="+91XXXXXXXXXX")
-    
-    if st.button("📞 Dispatch Simultaneous AI Alerts", type="primary"):
+    col_a, col_b = st.columns(2)
+    with col_a:
+        recipient = st.text_input("Emergency Contact Number (+91...)", placeholder="+91XXXXXXXXXX")
+    with col_b:
+        st.info(f"Current Voice Selection: {selected_voice}")
+
+    if st.button("📞 Initiate AI Voice Call", type="primary"):
         if recipient:
-            with st.spinner("Executing combined dispatch..."):
-                # 1. Play locally for operator
-                play_voice_local(VOICE_MAP[selected_voice_label]["file"], autoplay=True)
-                
-                # 2. Trigger remote Twilio call
-                success, result = trigger_twilio_call(recipient, VOICE_MAP[selected_voice_label]["url"], account_choice)
+            with st.spinner("Connecting to Twilio and initiating AI voice..."):
+                success, result = make_ai_voice_call(recipient, VOICE_URLS[selected_voice], account_choice)
                 
                 if success:
-                    st.success(f"✅ Call Initiated! SID: {result}")
+                    st.success(f"✅ AI Voice Call Initiated! SID: {result}")
+                    st.toast("The recipient is now hearing the emergency alert.")
                 else:
-                    st.error(f"❌ Call Failed: {result}")
+                    st.error(f"❌ Dispatch Failed: {result}")
         else:
-            st.warning("Please enter a valid phone number.")
+            st.warning("⚠️ Please provide a recipient phone number.")
 
 # --- SIMULATION ---
 with tab_sim:
-    s_pres = st.slider("Simulate Low Pressure", 880, 1030, 980)
-    st.metric("Simulated Severity", "High" if s_pres < 990 else "Normal")
+    s_pres = st.slider("Simulate Low Pressure (hPa)", 880, 1030, 1010)
+    st.metric("Predicted Severity", "High" if s_pres < 995 else "Normal")
