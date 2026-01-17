@@ -5,7 +5,7 @@ import os
 import requests
 import folium
 from streamlit_folium import st_folium
-from twilio.rest import Client #
+from twilio.rest import Client
 
 # ==============================================================================
 # MODULE 1: CONFIGURATION & CREDENTIALS
@@ -18,6 +18,7 @@ CONFIG = {
     "DEFAULT_COORDS": [17.6868, 83.2185] 
 }
 
+# Twilio Credentials (as provided)
 TWILIO_ACCOUNTS = {
     "Primary": {
         "SID": "ACc9b9941c778de30e2ed7ba57f87cdfbc",
@@ -31,7 +32,7 @@ TWILIO_ACCOUNTS = {
     }
 }
 
-# Unified Voice Configuration
+# Mapping for Twilio (URLs) and Local Dashboard (MP3 Files)
 VOICE_CONFIG = {
     "📢 Regional Broadcast (English)": {
         "url": "https://drive.google.com/uc?export=download&id=1CWswvjAoIAO7h6C6Jh-uCsrOWFM7dnS_",
@@ -60,13 +61,13 @@ def make_ai_voice_call(to_number, audio_url, account_key="Primary"):
         return False, str(e)
 
 def play_local_audio(file_path):
-    """Plays the audio file locally in the Streamlit UI."""
+    """Plays the provided MP3 file locally in the Streamlit UI."""
     if os.path.exists(file_path):
         with open(file_path, "rb") as audio_file:
             audio_bytes = audio_file.read()
             st.audio(audio_bytes, format="audio/mp3")
     else:
-        st.error(f"Audio file '{file_path}' not found.")
+        st.error(f"Audio file '{file_path}' not found in directory.")
 
 # ==============================================================================
 # MODULE 3: DATA ENGINE
@@ -82,37 +83,37 @@ def get_weather(city):
 lat, lon, pres, loc_name = get_weather(CONFIG["TARGET_CITY"])
 
 # ==============================================================================
-# MODULE 4: UI TABS
+# MODULE 4: UI LAYOUT
 # ==============================================================================
 st.title(f"🌪️ {CONFIG['APP_TITLE']}")
 
+# --- SIDEBAR (LEFT SIDE) ---
 with st.sidebar:
     st.header("⚙️ Dispatch Settings")
     selected_voice_label = st.selectbox("Select AI Voice Language", list(VOICE_CONFIG.keys()))
-    st.divider()
     account_choice = st.radio("Twilio Account", ["Primary", "Backup"])
+    
+    st.divider()
+    
+    # VOIVE PREVIEW MOVED HERE (Below Dispatch Settings)
+    st.subheader("🎙️ Local Voice Preview")
+    play_local_audio(VOICE_CONFIG[selected_voice_label]["local"])
+    st.caption("Play this to test the AI voice before making a call.")
 
+# --- MAIN DASHBOARD TABS ---
 tab_live, tab_sim, tab_ops = st.tabs(["📡 Live Data Monitor", "🧪 Storm Simulation", "🚨 Emergency Ops"])
 
 # --- LIVE MONITOR ---
 with tab_live:
-    # 2:3 ratio to keep metrics on the left
-    col1, col2 = st.columns([2, 3]) 
-    
+    col1, col2 = st.columns([1, 2])
     with col1:
-        st.subheader("📊 Live Telemetry")
         st.metric("Live Pressure", f"{pres} hPa")
         st.metric("Region", loc_name)
-        
-        st.markdown("---")
-        st.subheader("🎙️ Local Voice Preview")
-        # Local voice player placed strictly on the left side
-        play_local_audio(VOICE_CONFIG[selected_voice_label]["local"])
-        
         if pres < 1000:
-            st.error("🚨 ALERT: Cyclone risk detected.")
+            st.error("🚨 ALERT: Cyclone risk detected in Vizag area.")
 
     with col2:
+        # Clean Satellite Map (No highlights/boundaries)
         m = folium.Map(location=[lat, lon], zoom_start=11)
         folium.TileLayer(
             tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -130,11 +131,13 @@ with tab_live:
 # --- EMERGENCY OPS ---
 with tab_ops:
     st.header("🚨 AI Voice Dispatch System")
-    recipient = st.text_input("Emergency Contact Number", placeholder="+91XXXXXXXXXX")
+    st.write("Enter a verified phone number to trigger the AI voice alert via Twilio.")
+    
+    recipient = st.text_input("Emergency Contact Number (+91...)", placeholder="+91XXXXXXXXXX")
 
     if st.button("📞 Initiate AI Voice Call", type="primary"):
         if recipient:
-            with st.spinner("Connecting to Twilio..."):
+            with st.spinner("Connecting to Twilio and playing AI Voice..."):
                 success, result = make_ai_voice_call(
                     recipient, 
                     VOICE_CONFIG[selected_voice_label]["url"], 
