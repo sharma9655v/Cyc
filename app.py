@@ -5,7 +5,7 @@ import os
 import requests
 import folium
 from streamlit_folium import st_folium
-from twilio.rest import Client #
+from twilio.rest import Client
 
 # ==============================================================================
 # MODULE 1: CONFIGURATION & CREDENTIALS
@@ -31,15 +31,22 @@ TWILIO_ACCOUNTS = {
     }
 }
 
-VOICE_URLS = {
-    "📢 Regional Broadcast (English)": "https://drive.google.com/uc?export=download&id=1CWswvjAoIAO7h6C6Jh-uCsrOWFM7dnS_",
-    "🇮🇳 Emergency Alert (Telugu)": "https://drive.google.com/uc?export=download&id=15xz_g_TvMAF2Icjesi3FyMV6MMS-RZHt"
+# Unified Voice Configuration: Local files for UI, URLs for Twilio
+VOICE_CONFIG = {
+    "📢 Regional Broadcast (English)": {
+        "url": "https://drive.google.com/uc?export=download&id=1CWswvjAoIAO7h6C6Jh-uCsrOWFM7dnS_",
+        "local": "alert_detailed.mp3"
+    },
+    "🇮🇳 Emergency Alert (Telugu)": {
+        "url": "https://drive.google.com/uc?export=download&id=15xz_g_TvMAF2Icjesi3FyMV6MMS-RZHt",
+        "local": "alert_telugu_final.mp3"
+    }
 }
 
 st.set_page_config(page_title=CONFIG["APP_TITLE"], page_icon="🌪️", layout="wide")
 
 # ==============================================================================
-# MODULE 2: TWILIO CALL ENGINE
+# MODULE 2: VOICE & CALL ENGINES
 # ==============================================================================
 def make_ai_voice_call(to_number, audio_url, account_key="Primary"):
     """Triggers the remote AI voice call via Twilio."""
@@ -51,6 +58,15 @@ def make_ai_voice_call(to_number, audio_url, account_key="Primary"):
         return True, call.sid
     except Exception as e:
         return False, str(e)
+
+def play_local_audio(file_path):
+    """Plays the audio file locally in the Streamlit UI."""
+    if os.path.exists(file_path):
+        with open(file_path, "rb") as audio_file:
+            audio_bytes = audio_file.read()
+            st.audio(audio_bytes, format="audio/mp3")
+    else:
+        st.error(f"Audio file '{file_path}' not found.")
 
 # ==============================================================================
 # MODULE 3: DATA ENGINE
@@ -71,8 +87,14 @@ lat, lon, pres, loc_name = get_weather(CONFIG["TARGET_CITY"])
 st.title(f"🌪️ {CONFIG['APP_TITLE']}")
 
 with st.sidebar:
-    st.header("⚙️ Call Settings")
-    selected_voice = st.selectbox("Select AI Voice Language", list(VOICE_URLS.keys()))
+    st.header("⚙️ Dispatch Settings")
+    selected_voice_label = st.selectbox("Select AI Voice Language", list(VOICE_CONFIG.keys()))
+    
+    st.write("**Local Preview:**")
+    # Play local audio directly in the sidebar for preview
+    play_local_audio(VOICE_CONFIG[selected_voice_label]["local"])
+    
+    st.divider()
     account_choice = st.radio("Twilio Account", ["Primary", "Backup"])
 
 tab_live, tab_sim, tab_ops = st.tabs(["📡 Live Data Monitor", "🧪 Storm Simulation", "🚨 Emergency Ops"])
@@ -85,17 +107,16 @@ with tab_live:
         st.metric("Region", loc_name)
         if pres < 1000:
             st.error("🚨 ALERT: Cyclone risk detected in Vizag Boundary.")
+            # Optional: Autoplay alert if pressure is dangerously low
+            # play_local_audio(VOICE_CONFIG["📢 Regional Broadcast (English)"]["local"])
 
     with col2:
-        # Base Satellite Map
         m = folium.Map(location=[lat, lon], zoom_start=11)
         folium.TileLayer(
             tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             attr='Esri', name='Satellite'
         ).add_to(m)
         
-        # Detailed Boundary for Visakhapatnam
-        # This traces the city perimeter from Rishikonda down to Gajuwaka/Duvvada
         vizag_detailed_boundary = [
             [17.82, 83.35], [17.80, 83.39], [17.75, 83.35], [17.71, 83.32],
             [17.68, 83.29], [17.65, 83.27], [17.63, 83.21], [17.65, 83.15],
@@ -104,10 +125,10 @@ with tab_live:
         
         folium.Polygon(
             locations=vizag_detailed_boundary,
-            color="#FFD700", # Gold border
+            color="#FFD700",
             weight=4,
             fill=True,
-            fill_color="#FF4500", # Orange-Red fill
+            fill_color="#FF4500",
             fill_opacity=0.2,
             popup="Visakhapatnam Command Area"
         ).add_to(m)
@@ -123,12 +144,23 @@ with tab_live:
 # --- EMERGENCY OPS ---
 with tab_ops:
     st.header("🚨 AI Voice Dispatch System")
-    recipient = st.text_input("Emergency Contact Number", placeholder="+91XXXXXXXXXX")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        recipient = st.text_input("Emergency Contact Number", placeholder="+91XXXXXXXXXX")
+    with c2:
+        st.write("**Listen to Selected Alert:**")
+        play_local_audio(VOICE_CONFIG[selected_voice_label]["local"])
 
     if st.button("📞 Initiate AI Voice Call", type="primary"):
         if recipient:
             with st.spinner("Connecting to Twilio and playing AI Voice..."):
-                success, result = make_ai_voice_call(recipient, VOICE_URLS[selected_voice], account_choice)
+                # Use the URL for Twilio
+                success, result = make_ai_voice_call(
+                    recipient, 
+                    VOICE_CONFIG[selected_voice_label]["url"], 
+                    account_choice
+                )
                 if success:
                     st.success(f"✅ Call Initiated! SID: {result}")
                 else:
