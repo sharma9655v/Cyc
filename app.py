@@ -77,37 +77,40 @@ with st.sidebar:
 
 tab_live, tab_sim, tab_ops = st.tabs(["📡 Live Data Monitor", "🧪 Storm Simulation", "🚨 Emergency Ops"])
 
-# --- LIVE MONITOR (With Highlighted Area) ---
+# --- LIVE MONITOR (With City Boundary) ---
 with tab_live:
     col1, col2 = st.columns([1, 2])
     with col1:
         st.metric("Live Pressure", f"{pres} hPa")
         st.metric("Region", loc_name)
         if pres < 1000:
-            st.error("🚨 ALERT: Low pressure system detected.")
+            st.error("🚨 ALERT: Low pressure system detected in Vizag boundary.")
 
     with col2:
-        # 1. Base Map with Satellite view
         m = folium.Map(location=[lat, lon], zoom_start=11)
         folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                          attr='Esri', name='Satellite').add_to(m)
         
-        # 2. Highlight Visakhapatnam Area
-        folium.Circle(
-            location=[lat, lon],
-            radius=15000, # 15km highlight area
-            color='crimson',
+        # Approximate Visakhapatnam City Boundary Polygon
+        vizag_boundary = [
+            [17.75, 83.22], [17.78, 83.35], [17.70, 83.38], 
+            [17.65, 83.28], [17.62, 83.15], [17.70, 83.12]
+        ]
+        
+        folium.Polygon(
+            locations=vizag_boundary,
+            color="yellow",
+            weight=3,
             fill=True,
-            fill_color='red',
-            fill_opacity=0.3,
-            popup="Target Warning Zone: Visakhapatnam"
+            fill_color="orange",
+            fill_opacity=0.2,
+            popup="Visakhapatnam Metropolitan Area"
         ).add_to(m)
         
-        # 3. Specific Location Marker
         folium.Marker(
             [lat, lon], 
-            popup="Visakhapatnam Center",
-            icon=folium.Icon(color='red', icon='info-sign')
+            popup="Visakhapatnam Command Center",
+            icon=folium.Icon(color='red', icon='tower', prefix='fa')
         ).add_to(m)
 
         st_folium(m, height=450, use_container_width=True)
@@ -115,8 +118,6 @@ with tab_live:
 # --- EMERGENCY OPS (TWILIO VOICE CALL SYSTEM) ---
 with tab_ops:
     st.header("🚨 AI Voice Dispatch System")
-    st.write("Initiate an automated AI voice alert call to the field.")
-    
     recipient = st.text_input("Emergency Contact Number (+91...)", placeholder="+91XXXXXXXXXX")
 
     if st.button("📞 Initiate AI Voice Call", type="primary"):
