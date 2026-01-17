@@ -31,88 +31,101 @@ TWILIO_ACCOUNTS = {
     }
 }
 
-# AI Voice Assets (Converted for Twilio & Local Playback)
-VOICE_MAP = {
-    "📢 Regional Broadcast (English)": "https://drive.google.com/uc?export=download&id=1CWswvjAoIAO7h6C6Jh-uCsrOWFM7dnS_",
-    "🇮🇳 Emergency Alert (Telugu)": "https://drive.google.com/uc?export=download&id=15xz_g_TvMAF2Icjesi3FyMV6MMS-RZHt"
+# Mapping your uploaded files and the public Twilio links
+VOICE_ASSETS = {
+    "📢 Regional Broadcast (English)": {
+        "local": "alert_detailed.mp3",
+        "remote": "https://drive.google.com/uc?export=download&id=1CWswvjAoIAO7h6C6Jh-uCsrOWFM7dnS_"
+    },
+    "🇮🇳 Emergency Alert (Telugu)": {
+        "local": "alert_telugu_final.mp3",
+        "remote": "https://drive.google.com/uc?export=download&id=15xz_g_TvMAF2Icjesi3FyMV6MMS-RZHt"
+    }
 }
 
 st.set_page_config(page_title=CONFIG["APP_TITLE"], page_icon="🌪️", layout="wide")
 
 # ==============================================================================
-# MODULE 2: SIMULTANEOUS DISPATCH LOGIC
+# MODULE 2: DISPATCH ENGINE
 # ==============================================================================
-def trigger_voice_call(to_number, audio_url, account_key="Primary"):
-    """Triggers remote call via Twilio and local audio in dashboard."""
+def dispatch_emergency_alert(to_number, asset_key, account_key="Primary"):
+    """Plays audio locally on dashboard and triggers Twilio call."""
     try:
-        # 1. Trigger Remote AI Voice (Twilio)
+        asset = VOICE_ASSETS[asset_key]
+        
+        # 1. Local Playback (Left Side)
+        if os.path.exists(asset["local"]):
+            with open(asset["local"], "rb") as f:
+                st.audio(f.read(), format="audio/mp3", autoplay=True)
+        
+        # 2. Remote Twilio Call
         acc = TWILIO_ACCOUNTS[account_key]
         client = Client(acc["SID"], acc["AUTH"])
-        twiml_content = f'<Response><Play>{audio_url}</Play></Response>'
+        twiml = f'<Response><Play>{asset["remote"]}</Play></Response>'
         
-        call = client.calls.create(
-            twiml=twiml_content,
-            to=to_number,
-            from_=acc["PHONE"]
-        )
-        
-        # 2. Trigger Local AI Voice (Dashboard)
-        st.audio(audio_url, format="audio/mp3", autoplay=True)
-        
+        call = client.calls.create(twiml=twiml, to=to_number, from_=acc["PHONE"])
         return True, call.sid
     except Exception as e:
         return False, str(e)
 
-# (Module 3: Cyclone Engine remains the same as previous version)
 # ==============================================================================
-# MODULE 4: DASHBOARD UI
+# MODULE 4: MAIN LAYOUT
 # ==============================================================================
 st.title(f"🌪️ {CONFIG['APP_TITLE']}")
 
-# Real-time Logic
-lat, lon, pres, loc_name = [17.6868, 83.2185, 1012, "Visakhapatnam"] # Placeholder logic
-risk_level = 2 # Example severity
+# Real-time Weather Data Fetch
+def get_weather(city):
+    try:
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={CONFIG['API_KEY']}"
+        r = requests.get(url, timeout=5).json()
+        return r['coord']['lat'], r['coord']['lon'], r['main']['pressure'], r['name']
+    except:
+        return *CONFIG["DEFAULT_COORDS"], 1012, "Default (Simulated)"
 
-with st.sidebar:
+lat, lon, pres, loc_name = get_weather(CONFIG["TARGET_CITY"])
+
+# --- SPLIT LAYOUT: Left (Voice/Metrics) | Right (Satellite Map) ---
+left_col, right_col = st.columns([2, 3])
+
+with left_col:
     st.header("🎙️ Voice Dispatch Center")
-    selected_voice = st.selectbox("Select Language Alert", list(VOICE_MAP.keys()))
-    account_choice = st.radio("Twilio Account", ["Primary", "Backup"])
-
-tab_live, tab_sim, tab_ops = st.tabs(["📡 Live Data Monitor", "🧪 Storm Simulation", "🚨 Emergency Ops"])
-
-# --- EMERGENCY OPS (SIMULTANEOUS DISPATCH) ---
-with tab_ops:
-    st.header("🚨 AI Voice Call & Local Dispatch")
-    st.write("Clicking the button below triggers the AI voice alert locally and via Twilio.")
+    st.markdown("---")
     
-    col_left, col_right = st.columns(2)
-    with col_left:
-        recipient = st.text_input("Recipient Phone Number", placeholder="+91XXXXXXXXXX")
+    # Emergency Controls
+    selected_voice = st.selectbox("Select Alert Language", list(VOICE_ASSETS.keys()))
+    acc_choice = st.radio("Route via Twilio Account", ["Primary", "Backup"], horizontal=True)
+    recipient = st.text_input("Emergency Contact Number", placeholder="+91XXXXXXXXXX")
     
-    if st.button("📞 Dispatch Simultaneous Alerts", type="primary"):
+    if st.button("🔥 DISPATCH SIMULTANEOUS ALERTS", type="primary", use_container_width=True):
         if recipient:
-            with st.spinner("Dispatching..."):
-                success, result = trigger_voice_call(recipient, VOICE_MAP[selected_voice], account_choice)
+            with st.spinner("Executing Dispatch..."):
+                success, result = dispatch_emergency_alert(recipient, selected_voice, acc_choice)
                 if success:
-                    st.success(f"✅ Alert dispatched! Twilio SID: {result}")
-                    st.info("🔊 Local audio playing in dashboard...")
+                    st.success(f"✅ Dispatched! Call SID: {result}")
                 else:
-                    st.error(f"❌ Failed: {result}")
+                    st.error(f"❌ Error: {result}")
         else:
-            st.warning("Please enter a phone number.")
+            st.warning("⚠️ Please provide a recipient number.")
 
-# --- SATELLITE MAP (LEFT SIDE VOICE OVER MONITOR) ---
-with tab_live:
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        st.metric("Live Pressure", f"{pres} hPa")
-        if risk_level >= 2:
-            st.error("🚨 EMERGENCY LEVEL REACHED")
-            # Auto-plays English alert for the monitoring user
-            st.audio(VOICE_MAP["📢 Regional Broadcast (English)"], autoplay=True)
+    st.markdown("---")
+    st.subheader("📊 Live Telemetry")
+    st.metric("Atmospheric Pressure", f"{pres} hPa")
+    st.metric("Target Zone", loc_name)
 
-    with c2:
-        m = folium.Map(location=[lat, lon], zoom_start=10)
-        folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                         attr='Esri', name='Satellite').add_to(m)
-        st_folium(m, height=400, use_container_width=True)
+with right_col:
+    st.header("📡 Satellite Surveillance")
+    # Satellite Map Logic
+    m = folium.Map(location=[lat, lon], zoom_start=11)
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri', name='Satellite'
+    ).add_to(m)
+    
+    # Add status marker
+    folium.Marker(
+        [lat, lon], 
+        popup="Cyclone Center",
+        icon=folium.Icon(color="red", icon="warning", prefix="fa")
+    ).add_to(m)
+    
+    st_folium(m, height=550, use_container_width=True)
