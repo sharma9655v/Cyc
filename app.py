@@ -33,54 +33,25 @@ SIMULATION_MODE = "YOUR_PRIMARY" in TWILIO_SID_1
 st.set_page_config(page_title="Cyclone Predictor", page_icon="🌪️", layout="wide")
 
 # ==========================================
-# 🔐 SESSION INITIALIZATION
-# ==========================================
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "loc_name" not in st.session_state:
-    st.session_state.loc_name = "Unknown"
-if "cur_pres" not in st.session_state:
-    st.session_state.cur_pres = 1012
-
-# ==========================================
-# 🔐 USER STORAGE & AUTH
-# ==========================================
-if not os.path.exists(USERS_FILE):
-    pd.DataFrame(columns=["Name", "Phone", "Email", "Password", "Created"]).to_csv(USERS_FILE, index=False)
-
-def signup(name, phone, email, password):
-    df = pd.read_csv(USERS_FILE)
-    if email in df["Email"].values:
-        return False
-    new_user = pd.DataFrame([[name, phone, email, password, datetime.now()]], 
-                            columns=["Name", "Phone", "Email", "Password", "Created"])
-    df = pd.concat([df, new_user], ignore_index=True)
-    df.to_csv(USERS_FILE, index=False)
-    return True
-
-def login(email, password):
-    df = pd.read_csv(USERS_FILE)
-    user_match = df[(df["Email"] == email) & (df["Password"] == str(password))]
-    return not user_match.empty
-
-# ==========================================
 # 🆘 SOS FUNCTION (DUAL ACCOUNT FAILOVER)
 # ==========================================
 def trigger_sos(target_phone, location, pressure, label):
     if SIMULATION_MODE:
         return "SIMULATION"
     
+    # 🛠️ DEBUGGED: Proper credential list for failover
     accounts = [
         {"sid": TWILIO_SID_1, "token": TWILIO_AUTH_1, "from": TWILIO_PHONE_1},
         {"sid": TWILIO_SID_2, "token": TWILIO_AUTH_2, "from": TWILIO_PHONE_2}
     ]
     
     last_error = ""
-    for acc in accounts:
+    for idx, acc in enumerate(accounts):
         try:
-            client = Client(acc["sid"], acc["token"])
+            # 🛠️ DEBUGGED: Validation to avoid 401 errors
+            client = Client(acc["sid"].strip(), acc["token"].strip())
             
-            # 1. SMS Alert (English)
+            # 1. SMS Alert
             client.messages.create(
                 body=f"🚨 SOS: Cyclone Risk Detected!\nStatus: {label}\nLocation: {location}\nPressure: {pressure} hPa",
                 from_=acc["from"],
@@ -91,47 +62,52 @@ def trigger_sos(target_phone, location, pressure, label):
             call_content = f'<Response><Say language="hi-IN">Saavdhan! {location} mein chakravaat ka khatra hai. Kripya surakshit sthaan par jaye.</Say></Response>'
             client.calls.create(twiml=call_content, to=target_phone, from_=acc["from"])
             
-            return "SUCCESS" # If successful, stop trying other accounts
+            return "SUCCESS" 
         except Exception as e:
             last_error = str(e)
-            continue # Try the next account
+            # 🛠️ DEBUGGED: Only log the error and try the next account
+            continue 
             
     return last_error
 
 # ==========================================
-# 🔐 LOGIN/SIGNUP UI
+# 🌪️ MODEL LOADING (DEBUGGED)
 # ==========================================
-#
+@st.cache_resource
+def load_prediction_model():
+    """🛠️ DEBUGGED: Handles missing library errors"""
+    if not os.path.exists(MODEL_FILE):
+        return None
+    try:
+        return joblib.load(MODEL_FILE)
+    except ModuleNotFoundError:
+        st.error("❌ Missing Library: 'scikit-learn'. Add it to requirements.txt.")
+        return None
+    except Exception as e:
+        st.error(f"❌ Load Error: {e}")
+        return None
+
+model = load_prediction_model()
 
 # ==========================================
-# 🌪️ MAIN APP CONTENT
+# 📊 SIDEBAR & DASHBOARD
 # ==========================================
 st.title("🌪️ North Indian Ocean Cyclone Predictor")
 
-try:
-    model = joblib.load(MODEL_FILE)
-except Exception as e:
-    st.error(f"Failed to load model: {e}")
-    st.stop()
+with st.sidebar:
+    st.header("Data Source")
+    mode = st.sidebar.radio("Input Mode", ["📡 Live Weather (API)", "🎛️ Manual Simulation"])
+    st.divider()
+    st.header("🚨 Emergency Contacts")
+    p1 = st.sidebar.text_input("Primary Contact", "+917678495189")
+    p2 = st.sidebar.text_input("Family Contact", "+918130631551")
 
-# ==========================================
-# 📊 SIDEBAR (SOS Button & Contacts)
-# ==========================================
-st.sidebar.header("Data Source")
-mode = st.sidebar.radio("Input Mode", ["📡 Live Weather (API)", "🎛️ Manual Simulation"])
-
-st.sidebar.divider()
-st.sidebar.header("🚨 Emergency Contacts")
-p1 = st.sidebar.text_input("Primary Contact", "+919999999999")
-p2 = st.sidebar.text_input("Family Contact", "+91XXXXXXXXXX")
-
-# Weather Logic (Needed for SOS context)
+# Logic Calculations
 lat, lon, pres = 17.7, 83.3, 1012
 loc_display = "Visakhapatnam"
 
 if mode == "📡 Live Weather (API)":
-    city = st.sidebar.text_input("Enter City", "Visakhapatnam")
-    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}"
+    url = f"https://api.openweathermap.org/data/2.5/weather?q=Visakhapatnam&appid={WEATHER_API_KEY}"
     try:
         res = requests.get(url).json()
         if res.get("cod") == 200:
@@ -144,41 +120,32 @@ else:
     pres = st.sidebar.slider("Pressure (hPa)", 900, 1020, 1012)
     loc_display = "Simulation Area"
 
-# Save to state
-st.session_state.loc_name = loc_display
-st.session_state.cur_pres = pres
+# Prediction 
+if model:
+    prediction_idx = model.predict(np.array([[lat, lon, pres]]))[0]
+    current_status = ["🟢 SAFE", "🟡 DEPRESSION", "🟠 STORM", "🔴 CYCLONE"][prediction_idx]
+else:
+    current_status = "⚠️ MODEL OFFLINE"
+    prediction_idx = 0
 
-# Run Prediction
-labels = ["🟢 SAFE", "🟡 DEPRESSION", "🟠 STORM", "🔴 CYCLONE"]
-prediction_idx = model.predict(np.array([[lat, lon, pres]]))[0]
-current_status = labels[prediction_idx]
-
-# --- SOS BUTTON IN SIDEBAR ---
+# --- SOS BUTTON ---
 st.sidebar.divider()
 if st.sidebar.button("🚨 TRIGGER SOS NOW", use_container_width=True, type="primary"):
-    targets = [p for p in [p1, p2] if len(p) > 5]
-    if not targets:
-        st.sidebar.warning("Please enter a phone number.")
-    else:
-        for t in targets:
-            with st.sidebar.spinner(f"Sending to {t}..."):
-                status = trigger_sos(t, loc_display, pres, current_status)
-                if status == "SUCCESS": st.sidebar.success(f"✅ Sent to {t}")
-                elif status == "SIMULATION": st.sidebar.info(f"Test Mode: Sent to {t}")
-                else: st.sidebar.error(f"Error {t}: {status}")
+    targets = [p for p in [p1, p2] if len(p) > 10]
+    for t in targets:
+        with st.sidebar.spinner(f"Alerting {t}..."):
+            status = trigger_sos(t, loc_display, pres, current_status)
+            if status == "SUCCESS": st.sidebar.success(f"✅ Sent to {t}")
+            else: st.sidebar.error(f"❌ {t}: {status}")
 
-# ==========================================
-# 🌍 DASHBOARD DISPLAY
-# ==========================================
-col1, col2 = st.columns([1, 2])
-with col1:
+# --- DASHBOARD DISPLAY ---
+c1, c2 = st.columns([1, 2])
+with c1:
     st.subheader(f"📍 {loc_display}")
-    st.metric("Atmospheric Pressure", f"{pres} hPa")
-    st.markdown(f"### Current Status: {current_status}")
-    if prediction_idx >= 2:
-        st.warning("⚠️ HIGH RISK! Immediate action recommended.")
+    st.metric("Pressure", f"{pres} hPa")
+    st.markdown(f"### Status: {current_status}")
 
-with col2:
+with c2:
     m = folium.Map(location=[lat, lon], zoom_start=8)
     folium.Marker([lat, lon], popup=loc_display).add_to(m)
     st_folium(m, width=700, height=450)
