@@ -5,7 +5,7 @@ import os
 import requests
 import folium
 from streamlit_folium import st_folium
-from twilio.rest import Client
+from twilio.rest import Client #
 
 # ==============================================================================
 # MODULE 1: CONFIGURATION & CREDENTIALS
@@ -91,7 +91,6 @@ with st.sidebar:
     selected_voice_label = st.selectbox("Select AI Voice Language", list(VOICE_CONFIG.keys()))
     
     st.write("**Local Preview:**")
-    # Play local audio directly in the sidebar for preview
     play_local_audio(VOICE_CONFIG[selected_voice_label]["local"])
     
     st.divider()
@@ -106,36 +105,20 @@ with tab_live:
         st.metric("Live Pressure", f"{pres} hPa")
         st.metric("Region", loc_name)
         if pres < 1000:
-            st.error("🚨 ALERT: Cyclone risk detected in Vizag Boundary.")
-            # Optional: Autoplay alert if pressure is dangerously low
-            # play_local_audio(VOICE_CONFIG["📢 Regional Broadcast (English)"]["local"])
+            st.error("🚨 ALERT: Cyclone risk detected.")
 
     with col2:
+        # Base Satellite Map
         m = folium.Map(location=[lat, lon], zoom_start=11)
         folium.TileLayer(
             tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             attr='Esri', name='Satellite'
         ).add_to(m)
         
-        vizag_detailed_boundary = [
-            [17.82, 83.35], [17.80, 83.39], [17.75, 83.35], [17.71, 83.32],
-            [17.68, 83.29], [17.65, 83.27], [17.63, 83.21], [17.65, 83.15],
-            [17.70, 83.12], [17.75, 83.15], [17.78, 83.22], [17.82, 83.35]
-        ]
-        
-        folium.Polygon(
-            locations=vizag_detailed_boundary,
-            color="#FFD700",
-            weight=4,
-            fill=True,
-            fill_color="#FF4500",
-            fill_opacity=0.2,
-            popup="Visakhapatnam Command Area"
-        ).add_to(m)
-        
+        # Center Marker remains for reference
         folium.Marker(
             [lat, lon], 
-            popup="Visakhapatnam Central Command",
+            popup="Visakhapatnam Command Center",
             icon=folium.Icon(color='red', icon='warning', prefix='fa')
         ).add_to(m)
 
@@ -155,7 +138,6 @@ with tab_ops:
     if st.button("📞 Initiate AI Voice Call", type="primary"):
         if recipient:
             with st.spinner("Connecting to Twilio and playing AI Voice..."):
-                # Use the URL for Twilio
                 success, result = make_ai_voice_call(
                     recipient, 
                     VOICE_CONFIG[selected_voice_label]["url"], 
